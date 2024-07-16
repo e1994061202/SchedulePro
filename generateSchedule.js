@@ -193,17 +193,29 @@ function createRandomSchedule() {
                     schedule[day][shift].push(staff.name);
                     staff.actualShiftDays++;
                     remainingShifts[shift]--;
-                    staff.consecutiveWorkDays++;
                     availableStaff.splice(staffIndex, 1);
                 } else {
-                    break;  // 如果找不到合適的員工，跳出循環
+                    // 如果找不到合適的員工，嘗試從所有員工中選擇
+                    let allStaffIndex = staffList.findIndex(staff => 
+                        isStaffAvailableForShift(staff, day, shift, schedule)
+                    );
+                    if (allStaffIndex !== -1) {
+                        let staff = staffList[allStaffIndex];
+                        schedule[day][shift].push(staff.name);
+                        staff.actualShiftDays++;
+                        remainingShifts[shift]--;
+                    } else {
+                        break;  // 如果實在找不到合適的員工，跳出循環
+                    }
                 }
             }
         }
 
-        // 更新沒有排班的員工的連續工作天數
+        // 更新每個員工的連續工作天數
         staffList.forEach(staff => {
-            if (!isStaffScheduledOnDay(schedule, staff.name, day)) {
+            if (isStaffScheduledOnDay(schedule, staff.name, day)) {
+                staff.consecutiveWorkDays++;
+            } else {
                 staff.consecutiveWorkDays = 0;
             }
         });
@@ -216,9 +228,9 @@ function evaluateScheduleFitness(schedule) {
 
     // 規則 1：所有班次都必須被填滿
     for (let day = 1; day <= daysInMonth; day++) {
-        if (schedule[day][SHIFTS.DAY].length < dayShiftCount) fitness -= 1000;
-        if (schedule[day][SHIFTS.EVENING].length < eveningShiftCount) fitness -= 1000;
-        if (schedule[day][SHIFTS.NIGHT].length < nightShiftCount) fitness -= 1000;
+        if (schedule[day][SHIFTS.DAY].length < dayShiftCount) fitness -= 10000;
+        if (schedule[day][SHIFTS.EVENING].length < eveningShiftCount) fitness -= 10000;
+        if (schedule[day][SHIFTS.NIGHT].length < nightShiftCount) fitness -= 10000;
     }
 
     // 規則 2：尊重預排班
@@ -226,11 +238,10 @@ function evaluateScheduleFitness(schedule) {
         staff.prescheduledDates.forEach(preschedule => {
             let shiftStaff = schedule[preschedule.date][preschedule.shift];
             if (!shiftStaff.includes(staff.name)) {
-                fitness -= 2000;  // 嚴重違規，扣更多分
+                fitness -= 20000;  // 嚴重違規，扣更多分
             }
         });  
     });
-
 
     // 規則 3：實際排班數應接近預期排班數
     staffList.forEach(staff => {
@@ -239,7 +250,7 @@ function evaluateScheduleFitness(schedule) {
             if (isStaffScheduledOnDay(schedule, staff.name, day)) actualShifts++;
         }
         const difference = Math.abs(actualShifts - staff.expectedShiftDays);
-        fitness -= difference * 500;  // 每差一個班次扣500分
+        fitness -= difference * 1000;  // 每差一個班次扣1000分
     });
 
     // 規則 4：尊重班次偏好
@@ -248,20 +259,20 @@ function evaluateScheduleFitness(schedule) {
         for (let day = 1; day <= daysInMonth; day++) {
             for (let shift in SHIFTS) {
                 if (schedule[day][shift].includes(staff.name) && !staffShifts.has(shift)) {
-                    fitness -= 50;
+                    fitness -= 500;
                 }
             }
         }
     });
 
-    // 規則 5：避免連續工作超過 6 天
+    // 規則 5：避免連續工作超過 6 天（這裡只是再次檢查，實際上 isStaffAvailableForShift 已經禁止了這種情況）
     staffList.forEach(staff => {
         let consecutiveDays = 0;
         for (let day = 1; day <= daysInMonth; day++) {
             if (isStaffScheduledOnDay(schedule, staff.name, day)) {
                 consecutiveDays++;
                 if (consecutiveDays > 6) {
-                    fitness -= 200;  // 每多一天連續工作扣200分
+                    fitness -= 100000;  // 嚴重違規，大幅扣分
                 }
             } else {
                 consecutiveDays = 0;
@@ -269,19 +280,15 @@ function evaluateScheduleFitness(schedule) {
         }
     });
 
-    // 規則 6：避免不合理的班次安排（如白大白）
+    // 規則 6：避免不合理的班次安排（這裡只是再次檢查，實際上 isStaffAvailableForShift 已經禁止了這種情況）
     for (let day = 2; day <= daysInMonth; day++) {
         staffList.forEach(staff => {
             let yesterdayShift = getStaffShiftOnDay(schedule, staff.name, day - 1);
             let todayShift = getStaffShiftOnDay(schedule, staff.name, day);
-            if (yesterdayShift === SHIFTS.DAY && todayShift === SHIFTS.NIGHT) {
-                fitness -= 300;  // 白班接大夜扣300分
-            }
-            if (day < daysInMonth) {
-                let tomorrowShift = getStaffShiftOnDay(schedule, staff.name, day + 1);
-                if (yesterdayShift === SHIFTS.DAY && todayShift === SHIFTS.NIGHT && tomorrowShift === SHIFTS.DAY) {
-                    fitness -= 50000;  // 白大白情況扣50000分
-                }
+            if ((yesterdayShift === SHIFTS.EVENING && todayShift === SHIFTS.DAY) ||
+                (yesterdayShift === SHIFTS.NIGHT && (todayShift === SHIFTS.DAY || todayShift === SHIFTS.EVENING)) ||
+                (yesterdayShift === SHIFTS.DAY && todayShift === SHIFTS.NIGHT)) {
+                fitness -= 100000;  // 嚴重違規，大幅扣分
             }
         });
     }
@@ -363,28 +370,33 @@ function isStaffAvailableForShift(staff, day, shift, schedule) {
         return false;
     }
 
-    // 檢查連續工作天數,包括上個月的情況
-    if (staff.consecutiveWorkDays >= 6) {
+    // 檢查連續工作天數，包括上個月的情況
+    let consecutiveWorkDays = 0;
+    for (let i = day - 1; i >= Math.max(1, day - 6); i--) {
+        if (isStaffScheduledOnDay(schedule, staff.name, i)) {
+            consecutiveWorkDays++;
+        } else {
+            break;
+        }
+    }
+    if (consecutiveWorkDays >= 6) {
         return false;
     }
 
-    // 第一天的特殊處理
-    if (day === 1) {
-        if (staff.lastMonthLastDayShift) {
-            // 確保第一天的班次與上月最後一天相同
-            if (shift !== staff.lastMonthLastDayShift) {
-                return false;
-            }
-            // 如果上個月最後六天已經連續工作了6天，第一天就不該再排班
-            if (staff.previousMonthSchedules && staff.previousMonthSchedules.length >= 6) {
-                return false;
-            }
+    // 檢查不合理的班次安排
+    if (day > 1) {
+        const previousDayShift = getStaffShiftOnDay(schedule, staff.name, day - 1);
+        if ((previousDayShift === SHIFTS.EVENING && shift === SHIFTS.DAY) ||
+            (previousDayShift === SHIFTS.NIGHT && (shift === SHIFTS.DAY || shift === SHIFTS.EVENING)) ||
+            (previousDayShift === SHIFTS.DAY && shift === SHIFTS.NIGHT)) {
+            return false;
         }
-    } else {
-        let prevDay = day - 1;
-        let prevDayShift = getStaffShiftOnDay(schedule, staff.name, prevDay);
-        if ((prevDayShift === SHIFTS.EVENING && shift === SHIFTS.DAY) ||
-            (prevDayShift === SHIFTS.NIGHT && (shift === SHIFTS.DAY || shift === SHIFTS.EVENING))) {
+    }
+
+    // 第一天的特殊處理
+    if (day === 1 && staff.lastMonthLastDayShift) {
+        if ((staff.lastMonthLastDayShift === SHIFTS.EVENING && shift === SHIFTS.DAY) ||
+            (staff.lastMonthLastDayShift === SHIFTS.NIGHT && (shift === SHIFTS.DAY || shift === SHIFTS.EVENING))) {
             return false;
         }
     }
