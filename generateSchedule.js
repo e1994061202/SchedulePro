@@ -33,16 +33,30 @@ const ELITISM_COUNT = 2;
 function calculateExpectedShiftDays() {
     const totalShiftsPerDay = dayShiftCount + eveningShiftCount + nightShiftCount;
     const totalShiftsInMonth = daysInMonth * totalShiftsPerDay;
-    const expectedShiftsPerStaff = Math.floor(totalShiftsInMonth / staffList.length);
+    const baseExpectedShifts = Math.floor(totalShiftsInMonth / staffList.length);
+    const remainingShifts = totalShiftsInMonth % staffList.length;
 
+    // 初始化所有員工的預期班數為基礎班數
     staffList.forEach(staff => {
-        staff.expectedShiftDays = expectedShiftsPerStaff;
+        staff.expectedShiftDays = baseExpectedShifts;
     });
 
-    // 處理除不盡的情況，將剩餘的班次平均分配
-    const remainingShifts = totalShiftsInMonth % staffList.length;
+    // 隨機分配剩餘的班次
+    let remainingStaffIndices = [...Array(staffList.length).keys()];
     for (let i = 0; i < remainingShifts; i++) {
-        staffList[i].expectedShiftDays++;
+        if (remainingStaffIndices.length === 0) {
+            // 如果所有員工都已經分配了額外的班次，重置列表
+            remainingStaffIndices = [...Array(staffList.length).keys()];
+        }
+        // 隨機選擇一個員工索引
+        const randomIndex = Math.floor(Math.random() * remainingStaffIndices.length);
+        const selectedStaffIndex = remainingStaffIndices[randomIndex];
+        
+        // 為選中的員工增加一個班次
+        staffList[selectedStaffIndex].expectedShiftDays++;
+        
+        // 從剩餘列表中移除這個員工索引
+        remainingStaffIndices.splice(randomIndex, 1);
     }
 
     console.log('預期班數已計算完成:', staffList.map(s => `${s.name}: ${s.expectedShiftDays}`));
