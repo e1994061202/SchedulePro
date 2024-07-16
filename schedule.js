@@ -893,6 +893,25 @@ function clearAllPreschedules() {
 
 // 添加事件監聽器
 document.addEventListener('DOMContentLoaded', function() {
+    // 獲取當前日期
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    let nextMonth = currentDate.getMonth() + 2; // 當月+1，注意 JavaScript 中月份從 0 開始
+    let nextMonthYear = currentYear;
+
+    // 如果下個月是明年的 1 月
+    if (nextMonth > 12) {
+        nextMonth = 1;
+        nextMonthYear++;
+    }
+
+    // 設置年份下拉選單的默認值
+    const yearSelect = document.getElementById('year');
+    yearSelect.value = nextMonthYear.toString();
+
+    // 設置月份下拉選單的默認值
+    const monthSelect = document.getElementById('month');
+    monthSelect.value = nextMonth.toString();
     document.getElementById('addStaffBtn').addEventListener('click', addStaff);
     document.getElementById('saveStaffDataBtn').addEventListener('click', saveStaffData);
     document.getElementById('loadStaffDataBtn').addEventListener('click', loadStaffData);
@@ -905,7 +924,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('dayShiftCount').addEventListener('change', saveToLocalStorage);
     document.getElementById('eveningShiftCount').addEventListener('change', saveToLocalStorage);
     document.getElementById('nightShiftCount').addEventListener('change', saveToLocalStorage);
-
     // 頁面加載時從 localStorage 讀取數據
     loadFromLocalStorage();
 });

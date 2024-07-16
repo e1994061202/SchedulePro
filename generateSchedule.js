@@ -23,7 +23,7 @@ if (typeof SHIFT_DISPLAY === 'undefined') {
 
 
 const POPULATION_SIZE = 50;
-const MAX_GENERATIONS = 1000;  // 增加到 500
+const MAX_GENERATIONS = 100;  // 增加到 500
 const CROSSOVER_RATE = 0.8;
 const MUTATION_RATE = 0.02;  // 稍微增加變異率
 const ELITISM_COUNT = 2;
@@ -61,70 +61,100 @@ function calculateExpectedShiftDays() {
 
     console.log('預期班數已計算完成:', staffList.map(s => `${s.name}: ${s.expectedShiftDays}`));
 }
+// 確保在適當的時候顯示和隱藏進度條
+function updateProgressBar(generation, maxGenerations) {
+    const progressDiv = document.getElementById('progressDiv');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const percentage = Math.round((generation / maxGenerations) * 100);
+
+    // 使用 progressBar 元素來顯示進度
+    progressBar.style.width = `${percentage}%`;
+    progressText.textContent = `排班进度：${percentage}%`;
+
+    // 確保 progressDiv 顯示，並設定必要的樣式
+    progressDiv.style.display = 'block'; 
+
+    // 強制 reflow 和 repaint
+    progressDiv.offsetHeight; 
+}
+
 function generateSchedule() {
+    // 1. 載入本地儲存的資料
     loadFromLocalStorage();
     console.log('Loaded staffList:', staffList);
+
+    // 1.1. 檢查是否有員工資料
     if (staffList.length === 0) {
-        alert('沒有可用員工數據，請先添加員工。');
+        alert('沒有可用員工數據,請先添加員工。');
         return;
     }
-    // 獲取用戶選擇的年份和月份
+
+    // 2. 獲取使用者輸入的年份、月份和各班次人數
     const year = parseInt(document.getElementById("year").value);
     const month = parseInt(document.getElementById("month").value);
-    daysInMonth = new Date(year, month, 0).getDate();
-  
-    // 獲取各班次所需人數
+    daysInMonth = new Date(year, month, 0).getDate(); // 計算該月的天數
     dayShiftCount = parseInt(document.getElementById("dayShiftCount").value);
     eveningShiftCount = parseInt(document.getElementById("eveningShiftCount").value);
     nightShiftCount = parseInt(document.getElementById("nightShiftCount").value);
-  
-    // 計算預期班數
+
+    // 3. 計算預期班數
     calculateExpectedShiftDays();
 
-    // 初始化種群
-    let population = [];
+    // 4. 初始化遺傳演算法的參數
+    let population = []; // 用來存放排班表的種群
     for (let i = 0; i < POPULATION_SIZE; i++) {
-        population.push(createRandomSchedule());
+        population.push(createRandomSchedule()); // 創建 POPULATION_SIZE 個隨機排班表
     }
-  
-    // 運行遺傳算法
-    let bestSchedule = null;
-    let bestFitness = -Infinity;
-  
-    for (let generation = 0; generation < MAX_GENERATIONS; generation++) {
-        console.log(`第 ${generation} 代`);
-  
-        // 評估種群中每個排班表的適應度
+    let bestSchedule = null; // 目前找到的最佳排班表
+    let bestFitness = -Infinity; // 最佳排班表的適應度分數
+
+    // 4.1. 確保進度條顯示
+    const progressDiv = document.getElementById('progressDiv');
+    if (progressDiv) {
+        progressDiv.style.display = 'block';
+    }
+
+    // 5. 開始執行遺傳演算法，迭代 MAX_GENERATIONS 次
+    let currentGeneration = 0;
+    while (currentGeneration < MAX_GENERATIONS) {
+        console.log(`第 ${currentGeneration} 代`);
+
+        // 5.1. 更新進度條 (但實際上沒有作用，因為迴圈太快)
+        updateProgressBar(currentGeneration, MAX_GENERATIONS);
+
+        // 5.2. 評估種群中每個排班表的適應度
         let fitnessValues = population.map(evaluateScheduleFitness);
-      
-        // 檢查是否有新的最佳解  
+
+        // 5.3. 檢查是否有新的最佳解
         let bestIndex = fitnessValues.indexOf(Math.max(...fitnessValues));
         if (fitnessValues[bestIndex] > bestFitness) {
             bestSchedule = population[bestIndex];
-            bestFitness = fitnessValues[bestIndex]; 
+            bestFitness = fitnessValues[bestIndex];
             console.log(`新的最佳適應度: ${bestFitness}`);
         }
-  
-        // 提前終止條件：如果找到幾乎完美的排班表，就提前結束
-        if (bestFitness >= 99990) {  // 調整閾值，使其更嚴格
-            console.log("找到近乎完美排班表，提前終止。");
+
+        // 5.4. 提前終止條件：如果找到幾乎完美的排班表,就提前結束
+        if (bestFitness >= 99990) { 
+            console.log("找到近乎完美排班表,提前終止。");
+            updateProgressBar(MAX_GENERATIONS, MAX_GENERATIONS); // 確保進度條顯示100% (但實際上沒有作用)
             break;
         }
-  
-        // 選擇父代進行繁殖
+
+        // 5.5. 選擇父代進行交叉繁衍
         let parents = selectParents(population, fitnessValues);
-  
-        // 創建新一代種群
+
+        // 5.6. 創建新一代的排班表
         let newPopulation = [];
-  
-        // 精英策略：保留最佳解
+
+        // 5.7. 精英策略:保留最佳解
         for (let i = 0; i < ELITISM_COUNT; i++) {
             if (bestSchedule) {
                 newPopulation.push(JSON.parse(JSON.stringify(bestSchedule)));
             }
         }
-  
-        // 通過交叉和變異生成新的排班表
+
+        // 5.8. 通過交叉和變異生成新的排班表
         while (newPopulation.length < POPULATION_SIZE) {
             if (Math.random() < CROSSOVER_RATE) {
                 // 執行交叉操作
@@ -134,23 +164,31 @@ function generateSchedule() {
             } else {
                 // 執行變異操作
                 let parent = getRandomFromSelected(parents);
-                let child = mutate(parent);  
+                let child = mutate(parent);
                 newPopulation.push(child);
             }
         }
-  
-        // 用新一代取代舊一代
+
+        // 5.9. 用新一代取代舊一代
         population = newPopulation;
+        currentGeneration++;
     }
-  
+
+    // 6. 輸出最佳排班表和適應度分數
     console.log('最佳排班表:', bestSchedule);
     console.log('最佳適應度:', bestFitness);
-    
-    // 顯示最終的排班結果
+
+    // 6.1. 在生成排班表結束後,隱藏進度條 (但實際上沒有作用)
+    progressDiv.style.display = 'none'; 
+
+    // 7. 顯示排班結果、統計資料和排班矩陣
     displaySchedule(bestSchedule, year, month);
     displayStatistics(bestSchedule);
     displayScheduleMatrix(bestSchedule, year, month);
 }
+
+
+
 function createRandomSchedule() {
     let schedule = {};
     for (let day = 1; day <= daysInMonth; day++) {
@@ -223,6 +261,7 @@ function createRandomSchedule() {
 
     return schedule;
 }
+
 function evaluateScheduleFitness(schedule) {
     let fitness = 100000;  // 從一個高分開始，然後根據違規情況扣分
 
@@ -250,7 +289,7 @@ function evaluateScheduleFitness(schedule) {
             if (isStaffScheduledOnDay(schedule, staff.name, day)) actualShifts++;
         }
         const difference = Math.abs(actualShifts - staff.expectedShiftDays);
-        fitness -= difference * 1000;  // 每差一個班次扣1000分
+        fitness -= difference * 5000;  // 每差一個班次扣1000分
     });
 
     // 規則 4：尊重班次偏好
