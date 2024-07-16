@@ -23,7 +23,7 @@ if (typeof SHIFT_DISPLAY === 'undefined') {
 
 
 const POPULATION_SIZE = 50;
-const MAX_GENERATIONS = 100;  // 增加到 500
+const MAX_GENERATIONS = 1000;  // 增加到 500
 const CROSSOVER_RATE = 0.8;
 const MUTATION_RATE = 0.02;  // 稍微增加變異率
 const ELITISM_COUNT = 2;
