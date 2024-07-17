@@ -104,7 +104,7 @@
             <input type="number" id="nightShiftCount" min="1" value="1">
         </div>
 
-        <h2>人員列表</h2>
+        <h2>人員列表 <span id="expectedShiftDays"></span> <span id="extraShifts"></span></h2>
         <button id="addStaffBtn">新增人員</button>
         <button id="saveStaffDataBtn">儲存人員資料</button>
         <button id="loadStaffDataBtn">載入人員資料</button>
@@ -131,6 +131,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lp_solve/5.5.2/lp_solve.min.js"></script>
     <script src="schedule.js"></script>
     <script src="generateSchedule.js"></script>
 </body>

@@ -9,7 +9,7 @@ const SHIFT_DISPLAY = {
     [SHIFTS.EVENING]: '小夜',
     [SHIFTS.NIGHT]: '大夜'
 };
-
+let extraShifts = 0;
 let staffList = [];
 let currentFlatpickr = null;
 let currentEditingIndex = null;
@@ -27,18 +27,39 @@ function addStaff() {
             isPreviousMonthConfirmed: false,
             shift1: '',
             shift2: '',
-            expectedShiftDays: 0,  // 這將在生成排班表時被計算
+            expectedShiftDays: 0,
+            personalExpectedDays: 0,
             actualShiftDays: 0,
             consecutiveWorkDays: 0
         };
         staffList.push(staff);
+        calculateExpectedShiftDays();
         updateStaffList();
         saveToLocalStorage();
         console.log('新增人員：', staff);
     }
 }
+function updateExtraShiftCheckboxes() {
+    const checkboxes = document.querySelectorAll('.extra-shift-checkbox');
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    
+    checkboxes.forEach((checkbox, index) => {
+        if (index < staffList.length) {
+            if (!checkbox.checked) {
+                checkbox.disabled = checkedCount >= extraShifts;
+            }
+            staffList[index].personalExpectedDays = staffList[index].expectedShiftDays + (checkbox.checked ? 1 : 0);
+        }
+    });
+    
+    updateExpectedShiftDaysDisplay();
+    printLog();
+    saveToLocalStorage();
+}
 
 function updateStaffList() {
+    calculateExpectedShiftDays();
+    updateExpectedShiftDaysDisplay();
     const staffListUl = document.getElementById("staffList");
     staffListUl.innerHTML = "";
     staffList.forEach((staff, index) => {
@@ -67,6 +88,8 @@ function updateStaffList() {
             <button onclick="preVacation(${index})">預休</button>
             <button onclick="deletePreVacation(${index})">刪除預休</button>
             <button onclick="deleteStaff(${index})">刪除人員</button>
+            <input type="checkbox" id="extraShift-${index}" class="extra-shift-checkbox" onchange="updateExtraShiftCheckboxes()">
+            <label for="extraShift-${index}">額外班</label>
             <span class="prescheduled-dates" id="prescheduled-${index}"></span>
             <span class="pre-vacation-dates" id="pre-vacation-${index}"></span>
             <div id="previous-month-calendar-container-${index}" style="display: none;">
@@ -92,9 +115,13 @@ function updateStaffList() {
     console.log('人員列表已更新');
     addDragListeners();
     
-    // 為每個員工設置上月班表按鈕
     staffList.forEach((_, index) => setupPreviousMonthButton(index));
+
+    printLog();
+    updateExtraShiftCheckboxes();
 }
+
+
 
 
 function editStaffName(index, element) {
@@ -774,17 +801,12 @@ function deleteAllPreschedulesAndVacations() {
     }
 }
 function saveToLocalStorage() {
-    // 保存人員列表
     localStorage.setItem('staffList', JSON.stringify(staffList));
-
-    // 保存班次數量設置
     localStorage.setItem('shiftCounts', JSON.stringify({
         dayShift: document.getElementById('dayShiftCount').value,
         eveningShift: document.getElementById('eveningShiftCount').value,
         nightShift: document.getElementById('nightShiftCount').value
     }));
-
-    // 保存當前選擇的年份和月份
     localStorage.setItem('currentYear', document.getElementById('year').value);
     localStorage.setItem('currentMonth', document.getElementById('month').value);
 
@@ -814,7 +836,6 @@ function loadFromLocalStorage() {
             if (!staff.hasOwnProperty('actualShiftDays')) staff.actualShiftDays = 0;
             if (!staff.hasOwnProperty('consecutiveWorkDays')) staff.consecutiveWorkDays = 0;
         });
-        updateStaffList();
     }
     const savedShiftCounts = localStorage.getItem('shiftCounts');
     if (savedShiftCounts) {
@@ -823,6 +844,8 @@ function loadFromLocalStorage() {
         document.getElementById('eveningShiftCount').value = shiftCounts.eveningShift;
         document.getElementById('nightShiftCount').value = shiftCounts.nightShift;
     }
+    calculateExpectedShiftDays();
+    updateStaffList();
 }
 
 function saveStaffData() {
@@ -890,7 +913,126 @@ function clearAllPreschedules() {
     updateStaffList();
     saveToLocalStorage();
 }
+function calculateLastMonthConsecutiveWorkDays(staff) {
+    if (!staff.previousMonthSchedules || staff.previousMonthSchedules.length === 0) {
+        return 0;
+    }
 
+    let consecutiveDays = 0;
+    const lastDay = Math.max(...staff.previousMonthSchedules);
+
+    if (lastDay !== 31) {
+        return 0;
+    }
+
+    for (let day = 31; day > 0; day--) {
+        if (staff.previousMonthSchedules.includes(day)) {
+            consecutiveDays++;
+        } else {
+            break;
+        }
+    }
+
+    return consecutiveDays;
+}
+function calculateExpectedShiftDays() {
+    const year = document.getElementById("year").value;
+    const month = document.getElementById("month").value;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const dayShiftCount = parseInt(document.getElementById('dayShiftCount').value) || 0;
+    const eveningShiftCount = parseInt(document.getElementById('eveningShiftCount').value) || 0;
+    const nightShiftCount = parseInt(document.getElementById('nightShiftCount').value) || 0;
+    
+    const totalDailyShifts = dayShiftCount + eveningShiftCount + nightShiftCount;
+    const totalMonthlyShifts = totalDailyShifts * daysInMonth;
+    
+    const extraShiftsSpan = document.getElementById('extraShifts');
+    if (staffList.length > 0 && totalMonthlyShifts > 0) {
+        const averageShifts = totalMonthlyShifts / staffList.length;
+        const flooredAverageShifts = Math.floor(averageShifts);
+        
+        staffList.forEach((staff, index) => {
+            staff.expectedShiftDays = flooredAverageShifts;
+            const extraShiftChecked = document.getElementById(`extraShift-${index}`)?.checked || false;
+            staff.personalExpectedDays = flooredAverageShifts + (extraShiftChecked ? 1 : 0);
+        });
+        
+        extraShifts = totalMonthlyShifts - (flooredAverageShifts * staffList.length);
+        extraShiftsSpan.textContent = ` (額外班數: ${extraShifts})`;
+    } else {
+        staffList.forEach(staff => {
+            staff.expectedShiftDays = 0;
+            staff.personalExpectedDays = 0;
+        });
+        extraShifts = 0;
+        extraShiftsSpan.textContent = ' (額外班數: 0)';
+    }
+    
+    updateExpectedShiftDaysDisplay();
+    updateExtraShiftCheckboxes();
+}
+
+function printLog() {
+    const year = document.getElementById("year").value;
+    const month = document.getElementById("month").value;
+    const totalDays = daysInMonth(year, month);
+
+    const dayShiftCount = parseInt(document.getElementById('dayShiftCount').value) || 0;
+    const eveningShiftCount = parseInt(document.getElementById('eveningShiftCount').value) || 0;
+    const nightShiftCount = parseInt(document.getElementById('nightShiftCount').value) || 0;
+    const totalDailyShifts = dayShiftCount + eveningShiftCount + nightShiftCount;
+
+    console.log(`排班詳細資訊 - ${year}年${month}月 (共${totalDays}天)`);
+    console.log(`每日需要人數 (totalShifts): ${totalDailyShifts}`);
+    console.log("==================================");
+    console.log("員工排班詳細資訊：");
+    staffList.forEach((staff, index) => {
+        console.log(`\n${index + 1}. ${staff.name}`);
+        console.log(`   首選班次: ${SHIFT_DISPLAY[staff.shift1] || '未設置'}`);
+        console.log(`   次選班次: ${SHIFT_DISPLAY[staff.shift2] || '未設置'}`);
+        console.log(`   預期班數: ${staff.personalExpectedDays || '未計算'}`);
+        console.log(`   上月最後一日班次: ${SHIFT_DISPLAY[staff.lastMonthLastDayShift] || '未設置'}`);
+        
+        // 顯示上月最後六天的上班日期
+        if (staff.previousMonthSchedules && staff.previousMonthSchedules.length > 0) {
+            const lastSixDaysWork = staff.previousMonthSchedules.filter(day => day > 25).sort((a, b) => a - b);
+            console.log(`   上月最後六天上班日期: ${lastSixDaysWork.join(', ')}日`);
+        } else {
+            console.log("   上月最後六天上班日期: 無");
+        }
+        
+        // 顯示上個月最後連續上班天數
+        const consecutiveWorkDays = calculateLastMonthConsecutiveWorkDays(staff);
+        console.log(`   上個月最後連續上班天數: ${consecutiveWorkDays}天`);
+        
+        if (staff.prescheduledDates.length > 0) {
+            console.log("   預班:");
+            staff.prescheduledDates.forEach(prescheduled => {
+                console.log(`     ${prescheduled.date}日: ${SHIFT_DISPLAY[prescheduled.shift]}`);
+            });
+        } else {
+            console.log("   預班: 無");
+        }
+        
+        if (staff.preVacationDates.length > 0) {
+            console.log(`   預休: ${staff.preVacationDates.join(', ')}日`);
+        } else {
+            console.log("   預休: 無");
+        }
+    });
+}
+function daysInMonth(year, month) {
+    return new Date(year, month, 0).getDate();
+}
+function updateExpectedShiftDaysDisplay() {
+    const expectedShiftDaysSpan = document.getElementById('expectedShiftDays');
+    if (staffList.length > 0) {
+        const expectedDays = staffList[0].expectedShiftDays || 0;
+        expectedShiftDaysSpan.textContent = `(預期班數: ${expectedDays})`;
+    } else {
+        expectedShiftDaysSpan.textContent = '';
+    }
+}
 // 添加事件監聽器
 document.addEventListener('DOMContentLoaded', function() {
     // 獲取當前日期
@@ -912,6 +1054,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 設置月份下拉選單的默認值
     const monthSelect = document.getElementById('month');
     monthSelect.value = nextMonth.toString();
+
     document.getElementById('addStaffBtn').addEventListener('click', addStaff);
     document.getElementById('saveStaffDataBtn').addEventListener('click', saveStaffData);
     document.getElementById('loadStaffDataBtn').addEventListener('click', loadStaffData);
@@ -920,11 +1063,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('deleteAllDataBtn').addEventListener('click', deleteAllData);
     document.getElementById('year').addEventListener('change', deleteAllData);
     document.getElementById('month').addEventListener('change', deleteAllData);
-
+    
     document.getElementById('dayShiftCount').addEventListener('change', saveToLocalStorage);
     document.getElementById('eveningShiftCount').addEventListener('change', saveToLocalStorage);
     document.getElementById('nightShiftCount').addEventListener('change', saveToLocalStorage);
+
     // 頁面加載時從 localStorage 讀取數據
     loadFromLocalStorage();
+    updateStaffList();
 });
 
